@@ -1,0 +1,61 @@
+hi, I don't know what the fuck I'm doing
+I'm dumb and also new to programming (be gentle)
+
+Ultimate Goal = I would like to be able to press and hold a key
+                 while this key is down I would like to press another key
+                 on pressing the second key it would perform an action.
+                 one issue I'm having is that while pressing the 2nd key it also sends that key as output
+                 so I need to find a way to block that key from sending output.  from what I have read
+                 I need to use a keyboard hook?  (is my assumption here correct?)
+
+                    example needed: press and hold the 'A' key
+                                    then press the 'B' key (and release both after)
+                                    upon doing this I would like to send virtual key 'C'
+
+                    current: 'A' gets sent to Windows (extra info; I don't really care if the 'a' key is or isn't sent)
+                             'B' also gets sent to Windows (this is bad, I need to avoid this)
+                             upon this action I am able to send 'C' but it fails because 'B' was sent  (extra info: 'B' is actually left mouse button)
+
+Short Term goal = getting SetWindowsHookExA(); to compile. so I can slowly figure out wtf to do next
+                  at the moment I'm not understanding the 'lpfn' input required by the SetWindowsHookExA() function
+                  so any help here would be greatly appreciated
+
+also I don't really fully understand the 'hooking' concept itself
+from what I gather, I'd explain it as: essentially a man in the middle attack?
+if anybody could provide a better 'pseudo code/English' definition that may also be helpful.
+
+thanks,
+
+
+```
+pub fn testing() {
+
+    let idhook = WH_KEYBOARD_LL;
+
+    // issue start (i think)
+
+            // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowshookexa
+            // says lpfn is Type: HOKPROC
+
+            // {from windows-rs documents} Type Definition winrs::keyboard_and_mouse::HOOKPROC
+            // pub type HOOKPROC = Option<unsafe extern "system" fn(i32, usize, isize) -> isize>;
+
+            let lpfn =  ???????????????????????????????
+
+    // issue end
+
+
+    let hmod = WM_NULL;
+    let dwthreadid = 0;
+
+
+    SetWindowsHookExA(idhook, lpfn, hmod, dwthreadid);
+    // there is also
+    // SetWindowsHookA
+    // SetWindowsHookW
+    // SetWindowsHookExA
+    // SetWindowsHookExW
+    // they all look the same to me!?
+    // I couldn't find which one i need
+}
+```
