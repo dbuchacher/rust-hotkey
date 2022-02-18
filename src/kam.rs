@@ -5,6 +5,10 @@ pub use std::mem::zeroed;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
+// enables the mouse wheel to be used like the rest of the keys
+pub const VK_WHEELDOWN: VIRTUAL_KEY = VIRTUAL_KEY(300u16);
+pub const VK_WHEELUP: VIRTUAL_KEY = VIRTUAL_KEY(301u16);
+
 // adds functionality to VIRTUAL_KEY types
     pub trait Actions {
         fn is_up(&self) -> bool;    // VK_A.is_down()
@@ -39,27 +43,30 @@ use std::sync::Mutex;
 
 
 // send logic: reduces duplicate code
-    fn send_down_logic(v_key: VIRTUAL_KEY) {
-        match v_key {
-            VK_LBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_LEFTDOWN),
-            VK_RBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_RIGHTDOWN),
-            VK_MBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_MIDDLEDOWN),
-            VK_XBUTTON1 => mouse_event(XBUTTON1, MOUSEEVENTF_XDOWN),
-            VK_XBUTTON2 => mouse_event(XBUTTON2, MOUSEEVENTF_XDOWN),
-            _ => key_event(v_key, 0, KEYBD_EVENT_FLAGS(0))
-        }
+fn send_down_logic(v_key: VIRTUAL_KEY) {
+    match v_key {
+        VK_LBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_LEFTDOWN),
+        VK_RBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_RIGHTDOWN),
+        VK_MBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_MIDDLEDOWN),
+        VK_XBUTTON1 => mouse_event(XBUTTON1, MOUSEEVENTF_XDOWN),
+        VK_XBUTTON2 => mouse_event(XBUTTON2, MOUSEEVENTF_XDOWN),
+        VK_WHEELDOWN => mouse_event(MOUSEHOOKSTRUCTEX_MOUSE_DATA(u32::MAX - WHEEL_DELTA/2), MOUSEEVENTF_WHEEL),
+        VK_WHEELUP => mouse_event(MOUSEHOOKSTRUCTEX_MOUSE_DATA(WHEEL_DELTA/2), MOUSEEVENTF_WHEEL),
+        _ => key_event(v_key, 0, KEYBD_EVENT_FLAGS(0))
     }
-
-    fn send_up_logic(v_key: VIRTUAL_KEY) {
-        match v_key {
-            VK_LBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_LEFTUP),
-            VK_RBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_RIGHTUP),
-            VK_MBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_MIDDLEUP),
-            VK_XBUTTON1 => mouse_event(XBUTTON1, MOUSEEVENTF_XUP),
-            VK_XBUTTON2 => mouse_event(XBUTTON2, MOUSEEVENTF_XUP),
-            _ => key_event(v_key, 0, KEYEVENTF_KEYUP)
-        }
+}
+fn send_up_logic(v_key: VIRTUAL_KEY) {
+    match v_key {
+        VK_LBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_LEFTUP),
+        VK_RBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_RIGHTUP),
+        VK_MBUTTON => mouse_event(unsafe { zeroed() }, MOUSEEVENTF_MIDDLEUP),
+        VK_XBUTTON1 => mouse_event(XBUTTON1, MOUSEEVENTF_XUP),
+        VK_XBUTTON2 => mouse_event(XBUTTON2, MOUSEEVENTF_XUP),
+        VK_WHEELDOWN => mouse_event(MOUSEHOOKSTRUCTEX_MOUSE_DATA(u32::MAX - WHEEL_DELTA/2), MOUSEEVENTF_WHEEL),
+        VK_WHEELUP => mouse_event(MOUSEHOOKSTRUCTEX_MOUSE_DATA(WHEEL_DELTA/2), MOUSEEVENTF_WHEEL),
+        _ => key_event(v_key, 0, KEYEVENTF_KEYUP)
     }
+}
 
 
 // sends a key event
@@ -113,34 +120,147 @@ pub fn mouse_event(mouse_data: MOUSEHOOKSTRUCTEX_MOUSE_DATA, dw_flags: MOUSE_EVE
     unsafe { SendInput(c_inputs, &mut p_inputs, c_bsize); }
 }
 
-/* later stuff maybe
+    // couldn't find any defaults from windows-rs to detect which XBUTTON was pressed
+    // MSDN lists these values '0x0001' '0x0002' | however they don't work so im using the below
+    // MOUSEHOOKSTRUCTEX_MOUSE_DATA(65536) = XBUTTON1
+    // MOUSEHOOKSTRUCTEX_MOUSE_DATA(131072) = XBUTTON2
 
-    && ((*keyboard_data).flags & LLKHF_INJECTED).0 == 0
-    will act like '$' modifier in auto hotkey
-    
-    without LLKHF_INJECTEED
-    WM_KEYDOWN => if swapped_key.0.0 == v_key {}
-        swap(VK_A, VK_B);
-        swap(vk_B, VK_C);
-            will send 'c' when you press 'a'
-
-    with LLKHF_INJECTEED
-    WM_KEYDOWN => if swapped_key.0.0 == v_key && ((*keyboard_data).flags & LLKHF_INJECTED).0 == 0 {}
-        swap(VK_A, VK_B);
-        swap(vk_B, VK_C);
-            will send 'b' when you press 'a'
-*/
 
 // each time keyboard or mouse events occur they will pass though this hook
 pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-    // windows data variables storing info about current flags
-    let keyboard_data: *mut KBDLLHOOKSTRUCT = l_param.0 as _;
-    let mouse_data: *mut MSLLHOOKSTRUCT = l_param.0 as _;
-    let v_key = MapVirtualKeyW((*keyboard_data).vkCode, MAPVK_VK_TO_CHAR) as u16;
+    // logic: reduces duplicate code
+    fn logic(data: &HookData, trigger_key: VIRTUAL_KEY, is_down: bool, inject: bool) -> bool {
+        match is_down {
+            true => {
+                match inject {
+                    true => {
+                        match data.w_param.0 as u32 {
+                            WM_KEYDOWN     => if trigger_key == data.hooked_key && data.kbd_injected == 0 { return true },
+                            WM_LBUTTONDOWN => if trigger_key == VIRTUAL_KEY(1) && data.mouse_injected == 0 { return true },
+                            WM_RBUTTONDOWN => if trigger_key == VIRTUAL_KEY(2) && data.mouse_injected == 0 { return true },
+                            WM_MBUTTONDOWN => if trigger_key == VIRTUAL_KEY(4) && data.mouse_injected == 0 { return true },
+                            WM_XBUTTONDOWN => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(65536) => if trigger_key == VIRTUAL_KEY(5) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(131072) => if trigger_key == VIRTUAL_KEY(6) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            WM_MOUSEWHEEL => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(4287102976) => if trigger_key == VIRTUAL_KEY(300) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(7864320) => if trigger_key == VIRTUAL_KEY(301) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            _ => return false,
+                        }
+                    },
+                    false => {
+                        match data.w_param.0 as u32 {
+                            WM_KEYDOWN     => if trigger_key == data.hooked_key { return true },
+                            WM_LBUTTONDOWN => if trigger_key == VIRTUAL_KEY(1) { return true },
+                            WM_RBUTTONDOWN => if trigger_key == VIRTUAL_KEY(2) { return true },
+                            WM_MBUTTONDOWN => if trigger_key == VIRTUAL_KEY(4) { return true },
+                            WM_XBUTTONDOWN => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(65536) => if trigger_key == VIRTUAL_KEY(5) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(131072) => if trigger_key == VIRTUAL_KEY(6) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            WM_MOUSEWHEEL => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(4287102976) => if trigger_key == VIRTUAL_KEY(300) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(7864320) => if trigger_key == VIRTUAL_KEY(301) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            _ => return false,
+                        }
+                    }
+                }
+            }
+            false => {
+                match inject {
+                    true => {
+                        match data.w_param.0 as u32 {
+                            WM_KEYUP     => if trigger_key == data.hooked_key && data.kbd_injected == 0 { return true },
+                            WM_LBUTTONUP => if trigger_key == VIRTUAL_KEY(1) && data.mouse_injected == 0 { return true },
+                            WM_RBUTTONUP => if trigger_key == VIRTUAL_KEY(2) && data.mouse_injected == 0 { return true },
+                            WM_MBUTTONUP => if trigger_key == VIRTUAL_KEY(4) && data.mouse_injected == 0 { return true },
+                            WM_XBUTTONUP => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(65536) => if trigger_key == VIRTUAL_KEY(5) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(131072) => if trigger_key == VIRTUAL_KEY(6) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            WM_MOUSEWHEEL => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(4287102976) => if trigger_key == VIRTUAL_KEY(300) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(7864320) => if trigger_key == VIRTUAL_KEY(301) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            _ => return false,
+                        }
+                    },
+                    false => {
+                        match data.w_param.0 as u32 {
+                            WM_KEYUP     => if trigger_key == data.hooked_key { return true },
+                            WM_LBUTTONUP => if trigger_key == VIRTUAL_KEY(1) { return true },
+                            WM_RBUTTONUP => if trigger_key == VIRTUAL_KEY(2) { return true },
+                            WM_MBUTTONUP => if trigger_key == VIRTUAL_KEY(4) { return true },
+                            WM_XBUTTONUP => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(65536) => if trigger_key == VIRTUAL_KEY(5) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(131072) => if trigger_key == VIRTUAL_KEY(6) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            WM_MOUSEWHEEL => {
+                                match data.mouse_data {
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(4287102976) => if trigger_key == VIRTUAL_KEY(300) && data.mouse_injected == 0 { return true },
+                                    MOUSEHOOKSTRUCTEX_MOUSE_DATA(7864320) => if trigger_key == VIRTUAL_KEY(301) && data.mouse_injected == 0 { return true },
+                                    _ => return false,
+                                }
+                            },
+                            _ => return false,
+                        }
+                    }
+                
+                }
+            }
+        }
+        return false
+    }
+    
+    // windows data for keyboard info
+    let ll_keyboard_struct: *mut KBDLLHOOKSTRUCT = l_param.0 as _;
+    // windows data for mouse info
+    let ll_mouse_struct: *mut MSLLHOOKSTRUCT = l_param.0 as _;
+
+    struct HookData {
+        w_param: WPARAM,
+        hooked_key: VIRTUAL_KEY,
+        mouse_data: MOUSEHOOKSTRUCTEX_MOUSE_DATA,
+        kbd_injected: u32,
+        mouse_injected: u32,
+    }
+
+    let hook_data = HookData {
+        w_param: w_param,
+        hooked_key: VIRTUAL_KEY((*ll_keyboard_struct).vkCode as u16),
+        mouse_data: (*ll_mouse_struct).mouseData,
+        kbd_injected: ((*ll_keyboard_struct).flags & LLKHF_INJECTED).0,
+        mouse_injected: ((*ll_mouse_struct).flags & LLMHF_INJECTED),
+    };
 
     // clone global variables to prevent freeze up when looping them
     let swapped_keys = SWAPKEYS.lock().unwrap().clone();
     let blocked_keys = BLOCKKEYS.lock().unwrap().clone();
+
 
     // for hotkey in HOTKEYS.lock().unwrap().iter() {
     //     // check hotkey
@@ -152,33 +272,58 @@ pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM
     //     }
     // }
 
+
+
     for swapped_key in swapped_keys {
-        match w_param.0 as u32 {
-            WM_KEYDOWN => if swapped_key.0.0 == v_key && ((*keyboard_data).flags & LLKHF_INJECTED).0 == 0 { 
-                swapped_key.1.send(); return LRESULT(1)
-            },
-            _ => (),
+        if logic(&hook_data, swapped_key.0, swapped_key.2, swapped_key.3) {
+            swapped_key.1.send();
+            return LRESULT(1);
         }
     }
-    
+
     for blocked_key in blocked_keys {
-        match w_param.0 as u32 {
-            WM_KEYDOWN     => if blocked_key.0 == v_key        { return LRESULT(1) },
-            WM_KEYUP       => if blocked_key.0 == v_key        { return LRESULT(1) },
-            WM_LBUTTONDOWN => if blocked_key == VIRTUAL_KEY(1) { return LRESULT(1) },
-            WM_LBUTTONUP   => if blocked_key == VIRTUAL_KEY(1) { return LRESULT(1) },
-            WM_RBUTTONDOWN => if blocked_key == VIRTUAL_KEY(2) { return LRESULT(1) },
-            WM_RBUTTONUP   => if blocked_key == VIRTUAL_KEY(2) { return LRESULT(1) },
-            WM_MBUTTONDOWN => if blocked_key == VIRTUAL_KEY(4) { return LRESULT(1) },
-            WM_MBUTTONUP   => if blocked_key == VIRTUAL_KEY(4) { return LRESULT(1) },
-            WM_XBUTTONDOWN => if blocked_key == VIRTUAL_KEY(5) { return LRESULT(1) },
-            WM_XBUTTONUP   => if blocked_key == VIRTUAL_KEY(5) { return LRESULT(1) },
-            _ => (),
+        if logic(&hook_data, blocked_key.0, blocked_key.1, blocked_key.2) {
+            return LRESULT(1);
         }
     }
 
     CallNextHookEx(None, n_code, w_param, l_param)
 }
+
+pub struct Swap;
+
+impl Swap {
+    pub fn on_down(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        SWAPKEYS.lock().unwrap().push((key_in, key_out, true, false));
+    }
+    pub fn on_up(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        SWAPKEYS.lock().unwrap().push((key_in, key_out, false, false));
+    }
+    pub fn on_down_inject(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        SWAPKEYS.lock().unwrap().push((key_in, key_out, true, true));
+    }
+    pub fn on_up_inject(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        SWAPKEYS.lock().unwrap().push((key_in, key_out, false, true));
+    }
+}
+
+pub struct Block;
+
+impl Block {
+    pub fn on_down(key_in: VIRTUAL_KEY) {
+        BLOCKKEYS.lock().unwrap().push((key_in, true, false));
+    }
+    pub fn on_up(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        BLOCKKEYS.lock().unwrap().push((key_in, false, false));
+    }
+    pub fn on_down_inject(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        BLOCKKEYS.lock().unwrap().push((key_in, true, true));
+    }
+    pub fn on_up_inject(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
+        BLOCKKEYS.lock().unwrap().push((key_in, false, true));
+    }
+}
+
 
 // set hooks to monitor keyboard and mouse events
 pub unsafe fn set_hook() {
@@ -209,10 +354,10 @@ pub unsafe fn set_hook() {
 pub static HOTKEYS: Lazy<Mutex<Vec<unsafe fn (n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT>>> = Lazy::new(|| Mutex::new(vec![]));
 
 // block keys
-pub static BLOCKKEYS: Lazy<Mutex<Vec<VIRTUAL_KEY>>> = Lazy::new(|| Mutex::new(vec![]));
+pub static BLOCKKEYS: Lazy<Mutex<Vec<(VIRTUAL_KEY, bool, bool)>>> = Lazy::new(|| Mutex::new(vec![]));
 
 // swap keys
-pub static SWAPKEYS: Lazy<Mutex<Vec<(VIRTUAL_KEY, VIRTUAL_KEY)>>> = Lazy::new(|| Mutex::new(vec![]));
+pub static SWAPKEYS: Lazy<Mutex<Vec<(VIRTUAL_KEY, VIRTUAL_KEY, bool, bool)>>> = Lazy::new(|| Mutex::new(vec![]));
 
 // use add_hotkey in 'main' to add a functions to 'HOTKEYS'
 // these will be checked in the hook message loop
