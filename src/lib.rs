@@ -1,5 +1,5 @@
-pub mod keyboard_and_mouse;
-pub use crate::keyboard_and_mouse::*;
+pub mod keyboard;
+pub use crate::keyboard::*;
 
-pub mod kam;
-pub use crate::kam::*;
+pub mod mouse;
+pub use crate::mouse::*;

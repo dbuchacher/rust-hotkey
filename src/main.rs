@@ -1,9 +1,13 @@
 use ahk::*;
+pub use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
 
 fn main() {
 
-    Swap::on_up(VK_R, VK_A);
-    Block::on_down(VK_WHEELDOWN);
+    OnKeyDown::block(VK_A);
+    OnKeyDown::swap(VK_B, VK_0);
+    OnKeyDown::swap_mod(VK_D, VK_E, 1);
 
-    unsafe { set_hook(); }
+
+    unsafe { set_keyboard_hook(); }
 }
