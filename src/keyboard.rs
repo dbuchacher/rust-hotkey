@@ -12,32 +12,15 @@ pub const CONTROL: VIRTUAL_KEY = VK_LCONTROL;
 pub const ALT: VIRTUAL_KEY = VK_LMENU;
 pub const WINDOWS: VIRTUAL_KEY = VK_LWIN;
 
-const BLOCK:u8 = 1;
-const SWAP:u8 = 2;
-const SWAP_MOD:u8 = 3;
+// error 404 no key found, a fake key, no key,
+const VK_FALSE: VIRTUAL_KEY = VIRTUAL_KEY(404);
 
-// makes HOTKEYS more understandable
-type ActionType = u8;
-type KeyIsPressed = bool;
-type EnableModifiers = (bool, usize);
-type EnableInject = bool;
-type TriggerKey = VIRTUAL_KEY;
-type KeyToSend = VIRTUAL_KEY;
-type ModifierKeys = VIRTUAL_KEY;
+// actions
+const NONE:u8 = 0;
+const SWAP:u8 = 2;
 
 // allows use of a gobal variable 'HOTKEYS'
-// pub static HOTKEYS: Lazy<Mutex<Vec<unsafe fn (n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT>>> = Lazy::new(|| Mutex::new(vec![]));
-pub static HOTKEYS: Lazy<Mutex<Vec<(
-    ActionType,
-    KeyIsPressed,
-    EnableModifiers,
-    EnableInject,
-    TriggerKey,
-    Option<KeyToSend>,
-    Option<Vec<ModifierKeys>>,
-)>>> = Lazy::new(|| Mutex::new(vec![]));
-
-
+pub static HOTKEYS: Lazy<Mutex<Vec<Hotkey>>> = Lazy::new(|| Mutex::new(vec![]));
 
 // adds functionality to VIRTUAL_KEY types
 pub trait Actions {
@@ -71,21 +54,146 @@ impl Actions for VIRTUAL_KEY {
     }
 }
 
-pub struct OnKeyDown;
-pub struct OnKeyUp;
+#[derive(Debug, Clone)]
+pub struct Hotkey {
+    pub trigger: VIRTUAL_KEY,
+    pub modifiers: Vec<VIRTUAL_KEY>,
+    pub action: u8,
+    pub on_release: bool,
+    pub block_input_key: bool,
+    pub enable_modifiers: bool,
+    pub block_inject: bool,
+    pub to_swap: VIRTUAL_KEY,
 
-impl OnKeyDown {
-    pub fn block(key_in: VIRTUAL_KEY) {
-        HOTKEYS.lock().unwrap().push(( BLOCK, true, (false, 0), false, key_in, None, None));
+}
+
+impl Hotkey {
+    pub fn new(key: VIRTUAL_KEY) -> Hotkey {
+        Hotkey {
+            trigger: key,
+            modifiers: Vec::new(),
+            action: NONE,
+            on_release: false,
+            block_input_key: false,
+            enable_modifiers: false,
+            block_inject: false,
+            to_swap: VK_FALSE,
+        }
     }
 
-    pub fn swap(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
-        HOTKEYS.lock().unwrap().push(( SWAP, true, (false, 0), false, key_in, Some(key_out), None));
+    pub fn add_mods(mut self, key: Vec<VIRTUAL_KEY>) -> Self {
+        self.enable_modifiers = true;
+        self.modifiers = key;
+        self
     }
 
-    pub fn swap(key_in: VIRTUAL_KEY, key_out: VIRTUAL_KEY) {
-        HOTKEYS.lock().unwrap().push(( SWAP, true, (false, 0), false, key_in, Some(key_out), None));
+    pub fn block(mut self) -> Self {
+        self.block_input_key = true;
+        self
     }
+
+    pub fn on_release(mut self) -> Self {
+        self.on_release = true;
+        self
+    }
+
+    pub fn block_inject(mut self) -> Self {
+        self.block_inject = true;
+        self
+    }
+
+    pub fn swap(mut self, key: VIRTUAL_KEY) -> Self {
+        self.action = SWAP;
+        self.to_swap = key;
+        self
+    }
+
+    pub fn spawn(self) {
+        HOTKEYS.lock().unwrap().push(self);
+    }
+
+}
+
+// each time keyboard or mouse events occur they will pass though this hook
+pub unsafe extern "system" fn keyboard_hook(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+    // data from windows hook struct
+    let ll_keyboard_struct: *mut KBDLLHOOKSTRUCT = l_param.0 as _;
+
+    fn modifiers_are_down(keys: Vec<VIRTUAL_KEY>) -> bool {
+        for key in keys {
+            if !key.is_down() { return false }
+        }
+        true
+    }
+
+    // bring in hotkey global variable and loop though it
+    let keys = HOTKEYS.lock().unwrap().clone();
+    for key in keys {
+        match {
+            (
+                // does the current hooked key have a hotkey assigned to it?
+                VIRTUAL_KEY((*ll_keyboard_struct).vkCode as u16) == key.trigger
+                // and if it does!, what postion is the  hotkey assigned to trigger?
+                && {  // in this case we compare if the hotkey and hooked key are being pressed
+                    !key.on_release == (WPARAM(WM_KEYDOWN as usize) == w_param)
+                        || WPARAM(WM_SYSKEYDOWN as usize) == w_param                
+                }
+                || // or this is if the hotkey triggers on an key release
+                VIRTUAL_KEY((*ll_keyboard_struct).vkCode as u16) == key.trigger
+                && {  // we have to compare the hotkey and hooked key again.
+                    key.on_release &&
+                        WPARAM(WM_KEYUP as usize) == w_param
+                        || WPARAM(WM_SYSKEYUP as usize) == w_param                
+                }    
+
+            ) && ( // comparing the shit above this line to the conditions below this line
+
+                !key.block_inject
+                    || key.block_inject && ((*ll_keyboard_struct).flags & LLKHF_INJECTED).0 == 0
+
+                && !key.enable_modifiers 
+                    || key.enable_modifiers && modifiers_are_down(key.modifiers)
+            )
+        } {
+            true => {
+                match key.action {
+                    SWAP => key.to_swap.send(),
+                    _ => (),
+                }
+
+                // do we send the intial trigger key as a button push? or do we block it?
+                match key.block_input_key {
+                    true => return LRESULT(1),
+                    false => return CallNextHookEx(None, n_code, w_param, l_param),
+                }
+            },
+
+            // no hotkey matched lets continue trying the next
+            false => continue,
+        }
+    }
+    
+    CallNextHookEx(None, n_code, w_param, l_param)
+}
+
+// set hooks to monitor keyboard and mouse events
+pub unsafe fn set_keyboard_hook() {
+
+    // easy reading of 'SetWindowsHookExW' variables
+    let id_hook: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
+    let lpfn: HOOKPROC = Some(keyboard_hook);
+    let hmod: HINSTANCE = zeroed();
+    let dw_thread_id: u32 = 0;
+
+    //  installs hook to monitor keyboard events
+    let keyboard: HHOOK = SetWindowsHookExW(id_hook, lpfn, hmod, dw_thread_id);
+
+    // message loop
+    let mut message: MSG = zeroed();
+    GetMessageW(&mut message, None, 0, 0);
+
+    // not used yet
+    UnhookWindowsHookEx(keyboard);
 }
 
 
@@ -112,72 +220,4 @@ fn key_event(v_key: VIRTUAL_KEY, w_scan: u16, dw_flags: KEYBD_EVENT_FLAGS) {
 
     // call windows api to do the magic
     unsafe { SendInput(c_inputs, &mut p_inputs, c_bsize); }
-}
-
-
-// set hooks to monitor keyboard and mouse events
-pub unsafe fn set_keyboard_hook() {
-
-    // easy reading of 'SetWindowsHookExW' variables
-    let id_hook: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
-    let lpfn: HOOKPROC = Some(keyboard_hook);
-    let hmod: HINSTANCE = zeroed();
-    let dw_thread_id: u32 = 0;
-
-    //  installs hook to monitor keyboard events
-    let keyboard: HHOOK = SetWindowsHookExW(id_hook, lpfn, hmod, dw_thread_id);
-
-    // message loop
-    let mut message: MSG = zeroed();
-    GetMessageW(&mut message, None, 0, 0);
-
-    // not used yet
-    UnhookWindowsHookEx(keyboard);
-}
-
-// each time keyboard or mouse events occur they will pass though this hook
-pub unsafe extern "system" fn keyboard_hook(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-    // window message key states  syskey = alt
-    let wm_down = WPARAM(WM_KEYDOWN as usize) == w_param || WPARAM(WM_SYSKEYDOWN as usize) == w_param;
-    let wm_up = WPARAM(WM_KEYUP as usize) == w_param || WPARAM(WM_SYSKEYUP as usize) == w_param;
-
-    // data from windows hook struct
-    let ll_keyboard_struct: *mut KBDLLHOOKSTRUCT = l_param.0 as _;
-    let hook_key = VIRTUAL_KEY((*ll_keyboard_struct).vkCode as u16);
-    let check_inject = ((*ll_keyboard_struct).flags & LLKHF_INJECTED).0 == 0;
-
-    let keys = HOTKEYS.lock().unwrap().clone();
-
-    for key in keys {
-    // bools
-    let keys_match = key.4 == hook_key;  // current hook key and trigger key match
-    let on_key_down = key.1 == true;     // preform actions when called by OnKeyDown
-    let do_we_inject = key.3 == true;    // do we check if it is an injected key
-    let action = key.0;                  // set current action
-    // key.0 ActionType
-    // key.1 KeyIsPressed
-    // key.2 EnableModifiers
-    // key.3 EnableInject
-    // key.4 TriggerKey
-    // key.5 Option<KeyToSend>
-    // key.6 Option<Vec<ModifierKeys>>
-
-    if wm_down && on_key_down && keys_match && do_we_inject && check_inject
-        || wm_up && !on_key_down && keys_match && do_we_inject && check_inject
-        || wm_down && on_key_down && keys_match && !do_we_inject
-        || wm_up && !on_key_down && keys_match && !do_we_inject {
-            match action {
-                BLOCK => (),
-                SWAP => key.5.unwrap().send(),
-                SWAP_MOD => if key.6.unwrap()[0].is_down() {
-                    key.5.unwrap().send();
-                },
-                _ => (),
-            }
-            return LRESULT(1);
-        }
-    }
-
-    // no hotkey matched just return like normal
-    CallNextHookEx(None, n_code, w_param, l_param)
 }
