@@ -17,7 +17,8 @@ const VK_FALSE: VIRTUAL_KEY = VIRTUAL_KEY(404);
 
 // actions
 const NONE:u8 = 0;
-const SWAP:u8 = 2;
+const SWAP:u8 = 1;
+const CODE:u8 = 2;
 
 // allows use of a gobal variable 'HOTKEYS'
 pub static HOTKEYS: Lazy<Mutex<Vec<Hotkey>>> = Lazy::new(|| Mutex::new(vec![]));
@@ -64,6 +65,7 @@ pub struct Hotkey {
     pub enable_modifiers: bool,
     pub block_inject: bool,
     pub to_swap: VIRTUAL_KEY,
+    pub code: Option<fn ()>,
 
 }
 
@@ -78,7 +80,12 @@ impl Hotkey {
             enable_modifiers: false,
             block_inject: false,
             to_swap: VK_FALSE,
+            code: None,
         }
+    }
+
+    pub fn spawn(self) {
+        HOTKEYS.lock().unwrap().push(self);
     }
 
     pub fn add_mods(mut self, key: Vec<VIRTUAL_KEY>) -> Self {
@@ -87,15 +94,16 @@ impl Hotkey {
         self
     }
 
+    pub fn on_release(mut self) -> Self {
+        self.on_release = true;
+        self
+    }
+
     pub fn block(mut self) -> Self {
         self.block_input_key = true;
         self
     }
 
-    pub fn on_release(mut self) -> Self {
-        self.on_release = true;
-        self
-    }
 
     pub fn block_inject(mut self) -> Self {
         self.block_inject = true;
@@ -108,8 +116,10 @@ impl Hotkey {
         self
     }
 
-    pub fn spawn(self) {
-        HOTKEYS.lock().unwrap().push(self);
+    pub fn run(mut self, code: fn ()) -> Self {
+        self.action = CODE;
+        self.code = Some(code);
+        self
     }
 
 }
@@ -133,20 +143,20 @@ pub unsafe extern "system" fn keyboard_hook(n_code: i32, w_param: WPARAM, l_para
             (
                 // does the current hooked key have a hotkey assigned to it?
                 VIRTUAL_KEY((*ll_keyboard_struct).vkCode as u16) == key.trigger
-                // and if it does!, what postion is the  hotkey assigned to trigger?
-                && {  // in this case we compare if the hotkey and hooked key are being pressed
+                // and if it does!, what key-postion is the hotkey assigned to trigger?
+                && {  // in this case we compare if the hotkey and hooked key are being pressed-down
                     !key.on_release == (WPARAM(WM_KEYDOWN as usize) == w_param)
                         || WPARAM(WM_SYSKEYDOWN as usize) == w_param                
                 }
-                || // or this is if the hotkey triggers on an key release
+                || // or this is when the hotkey triggers on a key release-up
                 VIRTUAL_KEY((*ll_keyboard_struct).vkCode as u16) == key.trigger
-                && {  // we have to compare the hotkey and hooked key again.
+                && {  // we have to compare the hotkey and hooked key postion again.
                     key.on_release &&
                         WPARAM(WM_KEYUP as usize) == w_param
                         || WPARAM(WM_SYSKEYUP as usize) == w_param                
                 }    
 
-            ) && ( // comparing the shit above this line to the conditions below this line
+            ) && ( // below this line we are checking some additional conditions
 
                 !key.block_inject
                     || key.block_inject && ((*ll_keyboard_struct).flags & LLKHF_INJECTED).0 == 0
@@ -158,6 +168,7 @@ pub unsafe extern "system" fn keyboard_hook(n_code: i32, w_param: WPARAM, l_para
             true => {
                 match key.action {
                     SWAP => key.to_swap.send(),
+                    CODE => key.code.unwrap()(),
                     _ => (),
                 }
 
@@ -177,29 +188,27 @@ pub unsafe extern "system" fn keyboard_hook(n_code: i32, w_param: WPARAM, l_para
 }
 
 // set hooks to monitor keyboard and mouse events
-pub unsafe fn set_keyboard_hook() {
+pub fn set_keyboard_hook() {
+    unsafe {
+        // easy reading of 'SetWindowsHookExW' variables
+        let id_hook: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
+        let lpfn: HOOKPROC = Some(keyboard_hook);
+        let hmod: HINSTANCE = zeroed();
+        let dw_thread_id: u32 = 0;
 
-    // easy reading of 'SetWindowsHookExW' variables
-    let id_hook: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
-    let lpfn: HOOKPROC = Some(keyboard_hook);
-    let hmod: HINSTANCE = zeroed();
-    let dw_thread_id: u32 = 0;
+        // installs hook to monitor keyboard events
+        SetWindowsHookExW(id_hook, lpfn, hmod, dw_thread_id);
 
-    //  installs hook to monitor keyboard events
-    let keyboard: HHOOK = SetWindowsHookExW(id_hook, lpfn, hmod, dw_thread_id);
-
-    // message loop
-    let mut message: MSG = zeroed();
-    GetMessageW(&mut message, None, 0, 0);
-
-    // not used yet
-    UnhookWindowsHookEx(keyboard);
+        // message loop
+        let mut message: MSG = zeroed();
+        GetMessageW(&mut message, None, 0, 0);
+    }
 }
 
 
 // sends a key event
 fn key_event(v_key: VIRTUAL_KEY, w_scan: u16, dw_flags: KEYBD_EVENT_FLAGS) {
-
+    
     // 'SendInput' variables
     let c_inputs = 1;
     let mut p_inputs = { 
