@@ -1,17 +1,17 @@
 pub use windows::Win32::UI::Input::KeyboardAndMouse::*;
-pub use windows::Win32::UI::WindowsAndMessaging::*;
-pub use windows::Win32::Foundation::*;
-pub use std::mem::zeroed;
-pub use once_cell::sync::Lazy;
-pub use std::sync::Mutex;
+use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::Foundation::*;
+use std::mem::zeroed;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
 pub mod hook;
 
 // ez names
 pub const CONTROL: VIRTUAL_KEY = VK_LCONTROL;
-pub const WINDOWS: VIRTUAL_KEY = VK_LWIN;
-pub const SHIFT: VIRTUAL_KEY = VK_LSHIFT;
-pub const ALT: VIRTUAL_KEY = VK_LMENU;
+pub const SHIFT:   VIRTUAL_KEY = VK_LSHIFT;
+pub const ALT:     VIRTUAL_KEY = VK_LMENU;
+pub const WIN:     VIRTUAL_KEY = VK_LWIN;
 
 // enables the mouse wheel to be used like the rest of the keys
 pub const VK_WHEELDOWN: VIRTUAL_KEY = VIRTUAL_KEY(300u16);
@@ -21,11 +21,11 @@ pub const VK_WHEELUP: VIRTUAL_KEY = VIRTUAL_KEY(301u16);
 #[derive(Debug, Clone)]
 pub enum HotkeyActions {
     None,
-    Swap,
+    Send,
     Code,
 }
 
-// allows use of a gobal variable 'HOTKEYS'
+// allows access of gobal variable 'HOTKEYS' from when we are in the event hook
 pub static HOTKEYS: Lazy<Mutex<Vec<Hotkey>>> = Lazy::new(|| Mutex::new(vec![]));
 
 // adds functionality to VIRTUAL_KEY types
@@ -97,9 +97,8 @@ pub struct Hotkey {
     pub block_input_key: bool,
     pub enable_modifiers: bool,
     pub block_inject: bool,
-    pub to_swap: Option<VIRTUAL_KEY>,
+    pub to_send: Option<VIRTUAL_KEY>,
     pub code: Option<fn ()>,
-
 }
 
 impl Hotkey {
@@ -113,7 +112,7 @@ impl Hotkey {
             block_input_key: false,
             enable_modifiers: false,
             block_inject: false,
-            to_swap: None,
+            to_send: None,
             code: None,
         }
     }
@@ -142,10 +141,10 @@ impl Hotkey {
         self.block_inject = true;
         self
     }
-    // swap hotkey pushed with another key
-    pub fn swap(mut self, key: VIRTUAL_KEY) -> Self {
-        self.action = HotkeyActions::Swap;
-        self.to_swap = Some(key);
+    // send another key
+    pub fn send(mut self, key: VIRTUAL_KEY) -> Self {
+        self.action = HotkeyActions::Send;
+        self.to_send = Some(key);
         self
     }
     // run code from an external function
@@ -162,14 +161,13 @@ pub fn set_hook() {
         // easy reading of 'SetWindowsHookExW' variables
         let id_hook_keyboard: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
         let id_hook_mouse: WINDOWS_HOOK_ID = WH_MOUSE_LL;
-        let lpfn_keyboard: HOOKPROC = Some(hook::hook);
-        let lpfn_mouse: HOOKPROC = Some(hook::hook);
+        let lpfn: HOOKPROC = Some(hook::hook);
         let hmod: HINSTANCE = zeroed();
         let dw_thread_id: u32 = 0;
     
-        //  installs hooks to monitor events
-        SetWindowsHookExW(id_hook_keyboard, lpfn_keyboard, hmod, dw_thread_id);
-        SetWindowsHookExW(id_hook_mouse, lpfn_mouse, hmod, dw_thread_id);
+        // the call to install hooks
+        SetWindowsHookExW(id_hook_keyboard, lpfn, hmod, dw_thread_id);
+        SetWindowsHookExW(id_hook_mouse, lpfn, hmod, dw_thread_id);
 
         // message loop
         let mut message: MSG = zeroed();
