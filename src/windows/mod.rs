@@ -164,13 +164,13 @@ pub fn set_hook() {
         let id_hook_keyboard: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
         let id_hook_mouse: WINDOWS_HOOK_ID = WH_MOUSE_LL;
         let lpfn_keyboard: HOOKPROC = Some(keyboard_hook::hook);
-        let lpfn_mouse: HOOKPROC = Some(mouse_hook::hook);
+        // let lpfn_mouse: HOOKPROC = Some(mouse_hook::hook);
         let hmod: HINSTANCE = zeroed();
         let dw_thread_id: u32 = 0;
     
         //  installs hooks to monitor events
         SetWindowsHookExW(id_hook_keyboard, lpfn_keyboard, hmod, dw_thread_id);
-        SetWindowsHookExW(id_hook_mouse, lpfn_mouse, hmod, dw_thread_id);
+        // SetWindowsHookExW(id_hook_mouse, lpfn_mouse, hmod, dw_thread_id);
 
         // message loop
         let mut message: MSG = zeroed();
