@@ -2,5 +2,4 @@
 mod windows;
 #[cfg(target_os = "windows")]
 pub use crate::windows::*;
-pub use crate::windows::keyboard_hook::*;
-pub use crate::windows::mouse_hook::*;
+pub use crate::windows::hook::*;
