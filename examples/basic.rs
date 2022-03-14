@@ -2,17 +2,8 @@ use hotkey::*;
 use std::{thread::sleep, time::Duration};
 
 
-/* a few shorten names for convenience
-
-    CONTROL == VK_LCONTROL
-    SHIFT   == VK_LSHIFT
-    ALT     == VK_LALT
-    WIN     == VK_LWIN
-
-    all full names are here
-        https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-
-*/
+// all VK codes are here
+    // https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
 
 fn main() {
@@ -25,7 +16,7 @@ fn main() {
     sleep(Duration::from_secs(3));
 
     // the windows menu will be closed from this pressing the windows key
-    WIN.send();
+    VK_LWIN.send();
 
 
     // the a key should be stuck down showing "a key is down"

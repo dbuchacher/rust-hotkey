@@ -14,6 +14,27 @@ fn modifiers_are_down(keys: Vec<VIRTUAL_KEY>) -> bool {
     true
 }
 
+
+// set hooks to monitor keyboard and mouse events
+pub fn set_hook() {
+    unsafe {
+        // easy reading of 'SetWindowsHookExW' variables
+        let id_hook_keyboard: WINDOWS_HOOK_ID = WH_KEYBOARD_LL;
+        let id_hook_mouse: WINDOWS_HOOK_ID = WH_MOUSE_LL;
+        let lpfn: HOOKPROC = Some(hook::hook);
+        let hmod: HINSTANCE = zeroed();
+        let dw_thread_id: u32 = 0;
+    
+        // the call to install hooks
+        SetWindowsHookExW(id_hook_keyboard, lpfn, hmod, dw_thread_id);
+        SetWindowsHookExW(id_hook_mouse, lpfn, hmod, dw_thread_id);
+
+        // message loop
+        let mut message: MSG = zeroed();
+        GetMessageW(&mut message, None, 0, 0);
+    }
+}
+
 // each time keyboard or mouse events occur they will pass though this hook
 pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
 
@@ -27,7 +48,7 @@ pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM
     for key in keys {
 
         // are the hotkey and hooked key being pressed-down?
-        let pressed = !key.on_release == {
+        let pressed = (key.state.clone().unwrap() == KeyState::OnDown) == {
             w_param == WPARAM(WM_KEYDOWN as usize)     ||
             w_param == WPARAM(WM_SYSKEYDOWN as usize)  ||
             w_param == WPARAM(WM_LBUTTONDOWN as usize) ||
@@ -38,7 +59,7 @@ pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM
         };
 
         // are the hotkey and hooked key being released-up?
-        let released = key.on_release == {
+        let released = (key.state.clone().unwrap() == KeyState::OnUp) == {
             w_param == WPARAM(WM_KEYUP as usize)     ||
             w_param == WPARAM(WM_SYSKEYUP as usize)  ||
             w_param == WPARAM(WM_LBUTTONUP as usize) ||
@@ -99,10 +120,12 @@ pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM
             match key.action {
                 HotkeyActions::None => (),
                 HotkeyActions::Code => key.code.unwrap()(),
-                HotkeyActions::Send => key.to_send.unwrap().send(),
+                HotkeyActions::Send => key.send.unwrap().send(),
+                HotkeyActions::Down => key.down.unwrap().down(),
+                HotkeyActions::Up => key.up.unwrap().up(),
             }
             // do we send the intial trigger key as a button push? or do we block it by returning early
-            if key.block_input_key { 
+            if !key.unblock { 
                 return LRESULT(1);
             }
         }        

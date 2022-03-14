@@ -4,69 +4,50 @@ use hotkey::*;
 
 fn main() {
 
-    // block
-    // pressing '1' results in 'nothing'
-    // blocks the initial key
-    Hotkey::new(VK_1)
-        .block()
-        .spawn();
+    // block a key
+    Hotkey::new(VK_1).spawn(OnDown);
 
-    // send
-    // pressing '2' results in '2a'
-    // send the initial key and
-    // send the second key
-    Hotkey::new(VK_2)
-        .send(VK_A)
-        .spawn();
+    // send a different key
+    Hotkey::new(VK_2).send(VK_A).spawn(OnDown);
 
-    // send + block
-    // pressing '3' results in 'b'
-    // block the initial key
-    // send the second key
-    Hotkey::new(VK_3)
-        .send(VK_B)
-        .block()
-        .spawn();
+    // send a different key on release
+    Hotkey::new(VK_3).send(VK_B).spawn(OnUp);
 
-    // on release + send
-    // pressing '4' results '4c'
-    // holding '4' and releasing after a second will result in something like '44444444444c'
-    Hotkey::new(VK_4)
-        .on_release()
-        .send(VK_C)
-        .spawn();      
+    // switch right alt for control
+    Hotkey::new(VK_RMENU).down(VK_CONTROL).spawn(OnDown);
+    Hotkey::new(VK_RMENU).up(VK_CONTROL).spawn(OnUp);
 
-    // code
-    // pressing '5' results in something like '5555555555555'
-    // also hello world gets printed to console
-    fn five() {
-        println!("hello world");
-        VK_5.send();
+    // require modifier keys
+    // hold f1 + f2 + f3 + f4 before pressing '4'
+    Hotkey::new(VK_4).mods(vec![VK_F1, VK_F2, VK_F3, VK_F4]).send(VK_C).spawn(OnDown);
+
+    // send code
+    Hotkey::new(VK_5).code(test).spawn(OnDown);
+    fn test() {
+        println!("print to console");
+        VK_D.send();
     }
-    Hotkey::new(VK_5)
-        .code(five)
-        .spawn();
 
-    // code + block_inject
-    // pressing '6' results in '66'  (add block() if you want '6')
-    fn six() {
-        println!("hello world");
-        VK_6.send();
+    // send code with variable
+    Hotkey::new(VK_6).code(|| test_var(4, 5) ).spawn(OnDown);
+    fn test_var(x: i32, y: i32) {
+        println!("{} + {} = {}", x, y, x + y);
+        VK_E.send();
     }
-    Hotkey::new(VK_6)
-        .code(six)
-        .block_inject()
-        .spawn();
 
-    // add_mods + send + block
-    // pressing '7' results in '7'
-    // holding 'A'+'S'+'D'+'F' then pressing '7' will result in 'x'
-    Hotkey::new(VK_7)
-        .add_mods(vec![VK_A, VK_S, VK_D, VK_F])
-        .send(VK_X)
-        .block()
-        .spawn();
+    // block injected events from triggering - disabled (default)
+    Hotkey::new(VK_7).code(block7).spawn(OnUp);
+    fn block7() {
+        println!("block inject disabled");
+        VK_7.send();
+    }
 
+    // block injected events from triggering - enabled
+    Hotkey::new(VK_8).block_inject().code(block8).spawn(OnUp);
+    fn block8() {
+        println!("block inject enabled");
+        VK_8.send();
+    }
 
     // set hooks and start message loop
     set_hook();
