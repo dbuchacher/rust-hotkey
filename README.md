@@ -1,5 +1,9 @@
 # Rust Learning Project
 
+created a library to
+* set hotkeys
+* send keyevents
+
 ```powershell
 git clone https://github.com/dbuchacher/rust-ahk-like
 cd rust-ahk-like
