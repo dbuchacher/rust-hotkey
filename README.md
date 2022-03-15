@@ -4,11 +4,13 @@ created a library to
 * set hotkeys
 * send keyevents
 
+# Setup
 ```powershell
 git clone https://github.com/dbuchacher/rust-ahk-like
 cd rust-ahk-like
 ```
 
+# Examples
 ```powershell
 cargo run --example advance
 ```
