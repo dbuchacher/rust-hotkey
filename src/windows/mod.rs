@@ -33,7 +33,7 @@ impl Actions for VIRTUAL_KEY {
         unsafe { GetAsyncKeyState(self.0 as i32) as u16 & 0x8000 == 0 }
     }
     fn is_toggle_on(&self) -> bool {
-        if unsafe { GetKeyState(self.0 as i32) } == 0 { false } else { true }
+        (unsafe { GetKeyState(self.0 as i32) } != 0)
     }
     // push the key down
     fn down(&self) {
@@ -81,7 +81,7 @@ fn key_event(v_key: VIRTUAL_KEY, w_scan: u16, dw_flags: KEYBD_EVENT_FLAGS) {
 
     // 'SendInput' variables
     let c_inputs = 1;
-    let mut p_inputs = [ 
+    let p_inputs = [ 
         INPUT {
             r#type: INPUT_KEYBOARD,
                 Anonymous: INPUT_0 {
@@ -98,7 +98,7 @@ fn key_event(v_key: VIRTUAL_KEY, w_scan: u16, dw_flags: KEYBD_EVENT_FLAGS) {
     let c_bsize = std::mem::size_of::<INPUT>() as i32;
 
     // call windows api to do the magic
-    unsafe { SendInput(c_inputs, &mut p_inputs[0], c_bsize); }
+    unsafe { SendInput(c_inputs, &p_inputs[0], c_bsize); }
 }
 
 // sends a mouse event
@@ -106,7 +106,7 @@ fn mouse_event(mouse_data: MOUSEHOOKSTRUCTEX_MOUSE_DATA, dw_flags: MOUSE_EVENT_F
 
     // 'SendInput' variables
     let c_inputs = 1;
-    let mut p_inputs = [ 
+    let p_inputs = [ 
         INPUT {
             r#type: INPUT_MOUSE,
                 Anonymous: INPUT_0 {
@@ -124,7 +124,7 @@ fn mouse_event(mouse_data: MOUSEHOOKSTRUCTEX_MOUSE_DATA, dw_flags: MOUSE_EVENT_F
     let c_bsize = std::mem::size_of::<INPUT>() as i32;
 
     // call windows api to do the magic
-    unsafe { SendInput(c_inputs, &mut p_inputs[0], c_bsize); }
+    unsafe { SendInput(c_inputs, &p_inputs[0], c_bsize); }
 }
 
 

@@ -35,7 +35,10 @@ pub fn set_hook() {
     }
 }
 
-// each time keyboard or mouse events occur they will pass though this hook
+/// # Safety
+///
+/// each time keyboard or mouse events occur they will pass though this hook
+/// This function uses a windows api call that could be unsafe
 pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
 
     // data from windows hook struct
@@ -69,21 +72,13 @@ pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM
         };
 
         // stops injected mouse events
-        let mouse_inject = {
-            !key.block_inject ||
-            key.block_inject &&
-            ((*ll_mouse_struct).flags & LLMHF_INJECTED) == 0
-        };
+        let mouse_inject = !key.block_inject || ((*ll_mouse_struct).flags & LLMHF_INJECTED) == 0;
 
         // kstops injected keyboard events
-        let kbd_inject = {
-            !key.block_inject ||
-            key.block_inject &&
-            ((*ll_keyboard_struct).flags & LLKHF_INJECTED).0 == 0
-        };
+        let kbd_inject = !key.block_inject || ((*ll_keyboard_struct).flags & LLKHF_INJECTED).0 == 0;
 
         // check that all modifier keys are down
-        let modifiers = !key.enable_modifiers || key.enable_modifiers && modifiers_are_down(key.modifiers);
+        let modifiers = !key.enable_modifiers || modifiers_are_down(key.modifiers);
 
         // a bunch of boolean logic, i'll be happy if i never touch this part again
         let logic = match w_param.0 as u32 {
@@ -116,7 +111,7 @@ pub unsafe extern "system" fn hook(n_code: i32, w_param: WPARAM, l_param: LPARAM
         };
 
         // if the logic is true we can apply the proper actions to the hotkey
-        if logic == true {
+        if logic {
             match key.action {
                 HotkeyActions::None => (),
                 HotkeyActions::Code => key.code.unwrap()(),
