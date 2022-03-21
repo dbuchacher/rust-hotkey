@@ -6,7 +6,7 @@ created a library to
 
 # Setup
 ```powershell
-git clone https://github.com/dbuchacher/rust-ahk-like
+git clone https://github.com/dbuchacher/hotkey
 cd rust-ahk-like
 ```
 
@@ -14,14 +14,14 @@ cd rust-ahk-like
 ```powershell
 cargo run --example advance
 ```
-https://github.com/dbuchacher/rust-ahk-like/blob/main/examples/advance.rs
+https://github.com/dbuchacher/hotkey/blob/main/examples/advance.rs
 
 ```powershell
 cargo run --example basic
 ```
-https://github.com/dbuchacher/rust-ahk-like/blob/main/examples/basic.rs
+https://github.com/dbuchacher/hotkey/blob/main/examples/basic.rs
 
 ```powershell
 cargo run --example hotkeys
 ```
-https://github.com/dbuchacher/rust-ahk-like/blob/main/examples/hotkeys.rs
+https://github.com/dbuchacher/hotkey/blob/main/examples/hotkeys.rs
